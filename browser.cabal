@@ -20,6 +20,7 @@ Executable hbrowser
                , containers >= 0.3.0.0 && < 0.3.1
                , mtl >= 2.0.0.0 && < 2.0.1.0
                , pointedlist >= 0.4.0 && < 0.4.1
+               , fclabels >= 0.9.1 && < 0.9.2
   Other-Modules: Web.HBrowser.SetProxy
   C-Sources: src/Web/HBrowser/setproxy.c
   
