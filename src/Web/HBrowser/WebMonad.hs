@@ -28,16 +28,17 @@ type WebMonad = ReaderT Web IO
 
 
 data Web = Web 
-  { keymapRef   :: MapRef
-  , mousemapRef :: IORef [Mousemap]
-  , tabs        :: Tabs
-  , container   :: GTK.ScrolledWindow
-  , hovering    :: IORef (Maybe String, Maybe String)
-  , config      :: WebConf
-  , inputAction :: IORef (String -> WebMonad ())
-  , inputEntry  :: GTK.Entry
-  , inputLabel  :: GTK.Label
-  , inputBox    :: GTK.HBox
+  { keymapRef      :: MapRef
+  , mousemapRef    :: IORef [Mousemap]
+  , tabs           :: Tabs
+  , container      :: GTK.ScrolledWindow
+  , hovering       :: IORef (Maybe String, Maybe String)
+  , config         :: WebConf
+  , inputAction    :: IORef (String -> WebMonad ())
+  , inputEntry     :: GTK.Entry
+  , inputLabel     :: GTK.Label
+  , inputBox       :: GTK.HBox
+  , typeThroughRef :: IORef Bool
   }
 
 data WebConf = WebConf 

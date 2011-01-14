@@ -1,9 +1,15 @@
 -- Copyright (c) 2010 Philipp Balzarek (p.balzarek@googlemail.com)
 --
--- License: MIT
+-- LICENSE: MIT; see LICENSE file
+--
+-- MODULE: Main
+--
+-- DESCRIPTION: scriptable webkit based browser
 --
 
 {-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, ViewPatterns, StandaloneDeriving, ScopedTypeVariables, NamedFieldPuns #-}
+
+module Main where 
 
 import qualified Graphics.UI.Gtk as GTK
 import Graphics.UI.Gtk (set, AttrOp((:=)), on)
@@ -78,21 +84,6 @@ meta         = fromFlags [ GTK.Meta         ]
 release      = fromFlags [ GTK.Release      ]
 modifierMask = fromFlags [ GTK.ModifierMask ]
 
--- push one map on the stack
-push :: a -> [a] -> [a]
-push x xs = x:xs
-
--- remove the top element unless it's the last
-pop :: [t] -> [t]
-pop (x:y:xs)  = y:xs
-pop xs        = xs
-
--- look at the top element
-top :: [t] -> t
-top (x:xs)   = x
-top _        = error "top on empty stack"
-
-io = liftIO
 
 submap :: Keymap -> WebInputMonad ()
 submap map = do
@@ -126,6 +117,7 @@ myKeymap bar = M.fromList
            , ((0, GTK.keyFromName "q"), runScriptFromFile "follow-selected")
            , ((0, GTK.keyFromName "f"), runScriptFromFile "follow-numbers-new-tab")
            , ((0, GTK.keyFromName "r"), withCurrentViewIO Web.webViewReloadBypassCache)
+           , ((0, GTK.keyFromName "v"), typeThrough )      
            ]
 
 loadKeymap :: Keymap
@@ -165,23 +157,10 @@ deactivateInput = do
     GTK.widgetGrabFocus view
     writeIORef actionRef (const $ return ())
 
-handleKey :: Web -> GTK.EventM GTK.EKey Bool
-handleKey web = do 
-  keyVal <-  GTK.eventKeyVal
-  mods <- fromFlags <$> GTK.eventModifier
-  keymap <- io $ top <$> readIORef (keymapRef web)
-  case M.lookup (mods, keyVal) (map `M.union` keymap) of 
-    Nothing -> return False
-    Just action -> do
-      (_, nextmap) <- io $ runReaderT (runStateT action Reset) web
-      case nextmap of
-        Reset -> io $ writeIORef (keymapRef web) [keymap]
-        Back  -> io $ modifyIORef (keymapRef web) pop
-        Keep  -> return ()
-      return True
-  where
-    map = M.fromList [ ((control,GTK.keyFromName "g") , resetMap) ]
-    resetMap = setKeymap (keymap $ config web)
+typeThrough :: WebInputMonad ()
+typeThrough = do 
+  through <- asks typeThroughRef
+  io $ writeIORef through True
 
 handleEntryKey  :: (GTK.WidgetClass self) =>
      Web -> self -> GTK.EventM GTK.EKey Bool
@@ -291,6 +270,7 @@ main = do
       
   keymapRef <- newIORef [keymap]
   mousemapRef <- newIORef [myMousemap]
+  typeThroughRef <- newIORef False
   
   let config = WebConf{ keymap 
                       , mousemap = myMousemap
@@ -310,12 +290,12 @@ main = do
                     , inputEntry
                     , inputLabel
                     , inputBox
+                    , typeThroughRef
                     }
   let runWebMonad action = runReaderT action web
   
   runWebMonad $ setupView initialView
   
-  GTK.on scrollWindow GTK.keyPressEvent $ handleKey web
   GTK.on inputEntry GTK.keyPressEvent $ handleEntryKey web inputEntry
   
   GTK.on scrollWindow GTK.buttonPressEvent $ handleMouse web

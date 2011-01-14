@@ -5,16 +5,57 @@ module Web.HBrowser.ViewContainer where
 import qualified Graphics.UI.Gtk.WebKit.WebView as Web
 import qualified Graphics.UI.Gtk.WebKit.WebWindowFeatures as Web
 import qualified Graphics.UI.Gtk as GTK
+import System.Glib.Flags
+
 import Data.List.PointedList.Circular as PL
 import Data.IORef
 import Control.Monad
+import Control.Applicative
 import Data.Maybe
 import Data.Record.Label
+import qualified Data.Map as M
+import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Trans
 
+
 import Web.HBrowser.WebMonad as WM
 
+-- push one map on the stack
+push :: a -> [a] -> [a]
+push x xs = x:xs
+
+-- remove the top element unless it's the last
+pop :: [t] -> [t]
+pop (x:y:xs)  = y:xs
+pop xs        = xs
+
+-- look at the top element
+top :: [t] -> t
+top (x:xs)   = x
+top _        = error "top on empty stack"
+
+io = liftIO
+
+handleKey :: Web -> GTK.EventM GTK.EKey Bool
+handleKey web = do 
+  keyVal <-  GTK.eventKeyVal
+  mods <- fromFlags <$> GTK.eventModifier
+  currentKeymap <- liftIO $ top <$> readIORef (keymapRef web)
+  through <- liftIO $ readIORef $ typeThroughRef web
+  if through then do
+      when (keyVal == GTK.keyFromName "Escape") .
+        liftIO $ writeIORef (typeThroughRef web) False
+      return False
+    else case M.lookup (mods, keyVal) currentKeymap of 
+    Nothing -> return False
+    Just action -> do
+      (_, nextmap) <- liftIO $ runReaderT (runStateT action Reset) web
+      case nextmap of
+        Reset -> liftIO $ writeIORef (keymapRef web) [keymap $ config web]
+        Back  -> liftIO $ modifyIORef (keymapRef web) pop
+        Keep  -> return ()
+      return True
 
 statusBarUpdate :: WebMonad ()
 statusBarUpdate = do
@@ -24,18 +65,18 @@ statusBarUpdate = do
 setupView webView = do
   web <- ask
   let updateBar = runReaderT updateBars web
+  liftIO $ GTK.on webView GTK.keyPressEvent $ handleKey web    
   liftIO $ GTK.on webView Web.progressChanged (const updateBar)
   liftIO $ GTK.on webView Web.hoveringOverLink (\title url -> 
     (writeIORef (hovering web) (title, url) 
     >> updateBar))
+  
   return ()
 
 createView :: WebMonad Web.WebView
 createView = do
   webView <- liftIO $ Web.webViewNew
   setupView webView
-
-  
   return webView
 
 containerNew = do
