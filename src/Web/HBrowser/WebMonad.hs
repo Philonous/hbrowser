@@ -1,3 +1,5 @@
+{-# LANGUAGE NoMonomorphismRestriction #-}
+
 module Web.HBrowser.WebMonad where
 
 import qualified Graphics.UI.Gtk as GTK
@@ -19,8 +21,8 @@ type ModifierFlags = Int
 type KeyDef = (ModifierFlags, GTK.KeyVal)
 type MapRef = IORef [Keymap]
 
-type MouseDef = (ModifierFlags, Int)
-type Mousemap = M.Map MouseDef (WebInputMonad ())
+type MouseDef = (ModifierFlags, GTK.MouseButton)
+type Mousemap = [( MouseDef, (WebInputMonad ()))]
 
 data Tab = Tab 
     { tabView    :: Web.WebView
@@ -30,7 +32,6 @@ data Tab = Tab
 type Tabs = IORef (PointedList Tab)
 
 type WebMonad = ReaderT Web IO
-
 
 data Web = Web 
   { keymapRef      :: MapRef
@@ -56,3 +57,21 @@ data WebConf = WebConf
   , jsScriptDir :: String
   } 
   
+-- push one map on the stack
+push :: a -> [a] -> [a]
+push x xs = x:xs
+
+-- remove the top element unless it's the last
+pop :: [t] -> [t]
+pop (x:y:xs)  = y:xs
+pop xs        = xs
+
+-- look at the top element
+top :: [t] -> t
+top (x:xs)   = x
+top _        = error "top on empty stack"
+
+--hoverURL :: WebInputMonad (Maybe String)
+hoverURL = do 
+  hoveringRef <- asks hovering
+  liftIO . fmap fst $ readIORef hoveringRef

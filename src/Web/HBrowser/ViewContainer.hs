@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, NoMonomorphismRestriction, ViewPatterns #-}
+{-# LANGUAGE DeriveFunctor, NoMonomorphismRestriction, ViewPatterns, StandaloneDeriving #-}
 
 module Web.HBrowser.ViewContainer where
 
@@ -20,20 +20,6 @@ import Control.Monad.Trans
 
 
 import Web.HBrowser.WebMonad as WM
-
--- push one map on the stack
-push :: a -> [a] -> [a]
-push x xs = x:xs
-
--- remove the top element unless it's the last
-pop :: [t] -> [t]
-pop (x:y:xs)  = y:xs
-pop xs        = xs
-
--- look at the top element
-top :: [t] -> t
-top (x:xs)   = x
-top _        = error "top on empty stack"
 
 io = liftIO
 
@@ -57,6 +43,23 @@ handleKey web = do
         Keep  -> return ()
       return True
 
+handleMouse :: Web -> GTK.EventM GTK.EButton Bool
+handleMouse web = do
+  button <- GTK.eventButton
+  mods <- fromFlags <$> GTK.eventModifier
+  curentMousemap <- liftIO $ top <$> readIORef (mousemapRef web)
+  through <- liftIO $ readIORef $ typeThroughRef web
+  if through then return False
+    else case lookup (mods, button) curentMousemap of 
+    Nothing -> return True
+    Just action -> do
+      (_, nextmap) <- liftIO $ runReaderT (runStateT action Reset) web
+      case nextmap of
+        Reset -> liftIO $ writeIORef (mousemapRef web) [mousemap $ config web]
+        Back  -> liftIO $ modifyIORef (mousemapRef web) pop
+        Keep  -> return ()
+      return True
+
 statusBarUpdate :: WebMonad ()
 statusBarUpdate = do
   conf <- asks config
@@ -65,7 +68,8 @@ statusBarUpdate = do
 setupView webView = do
   web <- ask
   let updateBar = runReaderT updateBars web
-  liftIO $ GTK.on webView GTK.keyPressEvent $ handleKey web    
+  liftIO $ GTK.on webView GTK.keyPressEvent    $ handleKey web    
+  liftIO $ GTK.on webView GTK.buttonPressEvent $ handleMouse web      
   liftIO $ GTK.on webView Web.progressChanged (const updateBar)
   liftIO $ GTK.on webView Web.hoveringOverLink (\title url -> 
     (writeIORef (hovering web) (title, url) 

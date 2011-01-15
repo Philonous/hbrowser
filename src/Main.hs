@@ -129,7 +129,7 @@ loadKeymap = M.fromList
 
 
 myMousemap :: Mousemap
-myMousemap = M.empty
+myMousemap = []
 
 activateInput :: String -> WebMonad ()
 activateInput prefill= do
@@ -172,16 +172,6 @@ handleEntryKey web bar = do
     (0, "Escape") -> io $ runReaderT deactivateInput web
     _                         -> return ()
   return False
-
-handleMouse :: Web -> GTK.EventM GTK.EButton Bool
-handleMouse web = do
-  button <- GTK.eventButton
-  liftIO . putStrLn $ case button of 
-    GTK.LeftButton   -> "left"
-    GTK.MiddleButton -> "middle"
-    GTK.RightButton  -> "right"
-    GTK.OtherButton x -> show x
-  return True
 
 (<$$>) = fmap.fmap
 
