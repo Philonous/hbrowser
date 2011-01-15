@@ -56,9 +56,9 @@ deleteTab = lift $ do
 newTab :: String -> WebMonad ()
 newTab url = do
   web <- ask
-  webView <- createView
-  liftIO $ Web.webViewLoadUri webView url
-  modifyTabs $ insertRight webView
+  tab <- createTab
+  liftIO $ Web.webViewLoadUri (tabView tab) url
+  modifyTabs $ insertRight tab
   updateView
 
 keepKeymap :: (MonadState NextMap m) => m ()
@@ -246,23 +246,23 @@ main = do
   GTK.boxPackStart inputBox inputEntry GTK.PackGrow 0
 
   tabLabel <- GTK.labelNew $ Nothing
-  (tabs, initialView) <- containerNew
+  (tabs, initialTab) <- containerNew
   
   hovering <- newIORef (Nothing, Nothing)
   
-  scrollWindow <- GTK.scrolledWindowNew Nothing Nothing
+  eventBox <- GTK.eventBoxNew
   
-  GTK.containerAdd scrollWindow initialView
+  GTK.containerAdd eventBox (tabScrolledWindow initialTab)
   
   statusbar <- GTK.labelNew Nothing
   GTK.set statusbar [ GTK.miscXalign  GTK.:= 0 ]
   
   GTK.containerAdd window box
   
-  GTK.boxPackStart box tabLabel     GTK.PackNatural 0
-  GTK.boxPackStart box scrollWindow GTK.PackGrow    0
-  GTK.boxPackStart box statusbar    GTK.PackNatural 0
-  GTK.boxPackStart box inputBox     GTK.PackNatural 0  
+  GTK.boxPackStart box tabLabel  GTK.PackNatural 0
+  GTK.boxPackStart box eventBox  GTK.PackGrow    0
+  GTK.boxPackStart box statusbar GTK.PackNatural 0
+  GTK.boxPackStart box inputBox  GTK.PackNatural 0  
   
   let showStatus msg = GTK.labelSetText statusbar msg >> return ()
   let keymap = myKeymap inputEntry 
@@ -283,7 +283,7 @@ main = do
   let web = Web     { keymapRef
                     , mousemapRef 
                     , tabs
-                    , container = scrollWindow
+                    , container = eventBox
                     , hovering
                     , config
                     , inputAction
@@ -294,12 +294,10 @@ main = do
                     }
   let runWebMonad action = runReaderT action web
   
-  runWebMonad $ setupView initialView
+  runWebMonad . setupView $ tabView initialTab
   
   GTK.on inputEntry GTK.keyPressEvent $ handleEntryKey web inputEntry
   
-  GTK.on scrollWindow GTK.buttonPressEvent $ handleMouse web
-    
   GTK.on inputEntry GTK.entryActivate $ do
     input <- GTK.entryGetText inputEntry
     action <- readIORef inputAction

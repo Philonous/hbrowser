@@ -22,7 +22,12 @@ type MapRef = IORef [Keymap]
 type MouseDef = (ModifierFlags, Int)
 type Mousemap = M.Map MouseDef (WebInputMonad ())
 
-type Tabs = IORef (PointedList Web.WebView)
+data Tab = Tab 
+    { tabView    :: Web.WebView
+    , tabScrolledWindow :: GTK.ScrolledWindow
+    }
+  
+type Tabs = IORef (PointedList Tab)
 
 type WebMonad = ReaderT Web IO
 
@@ -31,7 +36,7 @@ data Web = Web
   { keymapRef      :: MapRef
   , mousemapRef    :: IORef [Mousemap]
   , tabs           :: Tabs
-  , container      :: GTK.ScrolledWindow
+  , container      :: GTK.EventBox
   , hovering       :: IORef (Maybe String, Maybe String)
   , config         :: WebConf
   , inputAction    :: IORef (String -> WebMonad ())
@@ -44,7 +49,7 @@ data Web = Web
 data WebConf = WebConf 
   { keymap      :: Keymap 
   , mousemap    :: Mousemap
-  , showTabs    :: [Web.WebView] -> IO ()
+  , showTabs    :: [Tab] -> IO ()
   , showStatus  :: String -> IO ()
   , renderStatus:: WebMonad String
   , homeURL     :: String

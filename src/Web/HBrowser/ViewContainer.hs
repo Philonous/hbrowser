@@ -70,25 +70,29 @@ setupView webView = do
   liftIO $ GTK.on webView Web.hoveringOverLink (\title url -> 
     (writeIORef (hovering web) (title, url) 
     >> updateBar))
-  
   return ()
 
-createView :: WebMonad Web.WebView
-createView = do
+createTab :: WebMonad Tab
+createTab = do
   webView <- liftIO $ Web.webViewNew
+  scrolledWindow <- liftIO $ GTK.scrolledWindowNew Nothing Nothing
+  liftIO $ GTK.containerAdd scrolledWindow webView
   setupView webView
-  return webView
+  return $ Tab webView scrolledWindow
 
 containerNew = do
   webView <- Web.webViewNew
-  ref <- newIORef $ singleton webView 
-  return (ref, webView)
+  scrolledWindow <- GTK.scrolledWindowNew Nothing Nothing
+  GTK.containerAdd scrolledWindow webView
+  let newTab = Tab webView scrolledWindow
+  ref <- newIORef $ singleton newTab
+  return (ref, newTab)
 
-currentView = do 
-  ref <- asks tabs
-  liftIO $ getL focus `fmap` readIORef ref
+currentTab' tabs = getL focus `fmap` readIORef tabs
+currentTab = asks tabs >>= liftIO . currentTab'
 
-currentView' tabs =  getL focus `fmap` readIORef tabs
+currentView' tabs =  tabView `fmap` currentTab' tabs
+currentView = tabView `fmap` currentTab
 
 withTabs f = do 
   tabRef <- asks tabs
@@ -106,28 +110,31 @@ prevTab = lift $ modifyTabs PL.previous
 toList (PointedList xs a ys) = reverse xs ++ (a:ys)
 
 titleList tabs = do 
-  titles <- mapM Web.webViewGetTitle tabs
-  urls   <- mapM Web.webViewGetUri   tabs
+  let views = fmap tabView tabs
+  titles <- mapM Web.webViewGetTitle views
+  urls   <- mapM Web.webViewGetUri   views
   return $ zipWith fromMaybe (fromMaybe "" `fmap` urls) titles
 
 updateBars = do    
   conf <- asks config
-  let tabsToList x = getL focus x : suffix x 
+  let zipperToList x = getL focus x : suffix x 
                      ++ reverse (reversedPrefix x)
-  withTabs (liftIO . showTabs conf . tabsToList)
+  withTabs (liftIO . showTabs conf . zipperToList)
   statusBarUpdate
 
 updateView :: WebMonad ()
 updateView = do
   conf <- ask
   let cont = container conf
-  cur <- currentView 
+  scrolledWindow <- tabScrolledWindow `fmap` currentTab
+  view <- tabView `fmap` currentTab
   liftIO $ do
     child <- GTK.binGetChild cont
     maybe (return ()) (GTK.containerRemove cont) child
-    GTK.containerAdd cont cur
-    GTK.widgetShow cur
-    GTK.widgetGrabFocus cur
+    GTK.containerAdd cont scrolledWindow
+    GTK.widgetShow scrolledWindow
+    GTK.widgetShow view
+    GTK.widgetGrabFocus view
   updateBars
   
 withCurrentView f = currentView >>= f
