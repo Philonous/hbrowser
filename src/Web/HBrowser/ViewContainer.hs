@@ -34,7 +34,7 @@ handleKey web = do
         liftIO $ writeIORef (typeThroughRef web) False
       return False
     else case M.lookup (mods, keyVal) currentKeymap of 
-    Nothing -> return False
+    Nothing -> return . not . typeThroughOnMissmatch . config $ web
     Just action -> do
       (_, nextmap) <- liftIO $ runReaderT (runStateT action Reset) web
       case nextmap of
@@ -51,7 +51,7 @@ handleMouse web = do
   through <- liftIO $ readIORef $ typeThroughRef web
   if through then return False
     else case lookup (mods, button) curentMousemap of 
-    Nothing -> return True
+    Nothing -> return . not . mouseThroughOnMissmatch . config $ web
     Just action -> do
       (_, nextmap) <- liftIO $ runReaderT (runStateT action Reset) web
       case nextmap of
@@ -143,3 +143,12 @@ updateView = do
   
 withCurrentView f = currentView >>= f
 withCurrentViewIO f = withCurrentView (liftIO . f)
+
+currentUrl = withCurrentViewIO Web.webViewGetUri
+
+hoveringLink = snd `fmap` readCurrent hovering
+
+readCurrent field = do
+  ref <- asks field
+  liftIO $ readIORef ref
+  

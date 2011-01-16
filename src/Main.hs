@@ -98,16 +98,13 @@ modifyKeymap :: ([Keymap] -> [Keymap]) -> WebMonad ()
 modifyKeymap f =  ask >>= \(keymapRef -> ref) -> io $ 
                     readIORef ref >>= writeIORef ref . f
   
-loadURL :: String -> WebInputMonad ()
-loadURL url = do
-  page <- currentView
-  io $ Web.webViewLoadUri page url
-
 myKeymap  :: ( GTK.EditableClass self, GTK.EntryClass self) => self -> Keymap
 myKeymap bar = M.fromList
            [ ((0, GTK.keyFromName "l"), submap loadKeymap)
            , ((0, GTK.keyFromName "h"), io $ putStrLn "hello world" )
            , ((0, GTK.keyFromName "o"), withInput "open: " "http://" openURL  )
+           , ((control, GTK.keyFromName "o"), currentUrl >>= \url -> 
+               withInput "open: " (fromMaybe "http://" url) openURL  )
            , ((0, GTK.keyFromName "t"), withInput "newtab: " "http://" newTab )
            , ((0, GTK.keyFromName "d"), deleteTab )
            , ((0, GTK.keyFromName "e"), nextTab )
@@ -122,16 +119,18 @@ myKeymap bar = M.fromList
 
 loadKeymap :: Keymap
 loadKeymap = M.fromList
-             [ ((0, GTK.keyFromName "r"), loadURL "http://reddit.com")
-             , ((0, GTK.keyFromName "t"), loadURL "http://tagesschau.de")
-             , ((0, GTK.keyFromName "g"), loadURL "http://google.com")
+             [ ((0, GTK.keyFromName "r"), openURL "http://reddit.com")
+             , ((0, GTK.keyFromName "t"), openURL "http://tagesschau.de")
+             , ((0, GTK.keyFromName "g"), openURL "http://google.com")
              ]
 
 
 myMousemap :: Mousemap
-myMousemap = []
+myMousemap = [ ((0, GTK.LeftButton), hoveringLink >>= maybe (return ()) openURL)
+             , ((0, GTK.MiddleButton), hoveringLink >>= maybe (return ()) (lift . newTab))
+             ]
 
-activateInput :: String -> WebMonad ()
+activateInput :: (MonadWeb m) => String -> m ()
 activateInput prefill= do
   bar <- asks inputEntry
   container <- asks inputBox
@@ -197,15 +196,15 @@ defaultRenderStatus = do
                     , fromMaybe "" title , " "
                     , uri]
 
-withInput :: String -> String -> (String -> WebMonad ()) -> WebInputMonad ()
-withInput labelText prefill action = lift $ do
+withInput :: (MonadWeb m) =>String -> String -> (String -> WebMonad ()) -> m ()
+withInput labelText prefill action =  do
   label <- asks inputLabel
   actionRef <- asks inputAction
   liftIO $ writeIORef actionRef action
   liftIO $ GTK.labelSetText label labelText
   activateInput prefill
 
-openURL :: String -> WebMonad ()
+openURL :: (MonadWeb m) => String -> m ()
 openURL url = do
   view <- currentView
   liftIO $ Web.webViewLoadUri view url
@@ -269,6 +268,8 @@ main = do
                       , renderStatus = defaultRenderStatus
                       , homeURL = "http://ixquick.com"
                       , jsScriptDir = "/home/uart14/.hbrowser/scripts"
+                      , typeThroughOnMissmatch = False
+                      , mouseThroughOnMissmatch = True
                       }
   let web = Web     { keymapRef
                     , mousemapRef 

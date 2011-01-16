@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, FlexibleInstances, UndecidableInstances #-}
 
 module Web.HBrowser.WebMonad where
 
@@ -33,6 +33,9 @@ type Tabs = IORef (PointedList Tab)
 
 type WebMonad = ReaderT Web IO
 
+class (MonadReader Web m, MonadIO m, Functor m) => MonadWeb m
+instance (MonadReader Web m, MonadIO m, Functor m) => MonadWeb m
+
 data Web = Web 
   { keymapRef      :: MapRef
   , mousemapRef    :: IORef [Mousemap]
@@ -55,6 +58,8 @@ data WebConf = WebConf
   , renderStatus:: WebMonad String
   , homeURL     :: String
   , jsScriptDir :: String
+  , typeThroughOnMissmatch :: Bool
+  , mouseThroughOnMissmatch :: Bool
   } 
   
 -- push one map on the stack
