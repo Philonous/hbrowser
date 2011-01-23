@@ -4,6 +4,7 @@ module Web.HBrowser.ViewContainer where
 
 import qualified Graphics.UI.Gtk.WebKit.WebView as Web
 import qualified Graphics.UI.Gtk.WebKit.WebWindowFeatures as Web
+import qualified Graphics.UI.Gtk.WebKit.WebNavigationAction as Web
 import qualified Graphics.UI.Gtk as GTK
 import System.Glib.Flags
 
@@ -65,12 +66,19 @@ statusBarUpdate = do
   conf <- asks config
   liftIO . (showStatus conf) =<< renderStatus conf
 
+deriving instance Show Web.NavigationReason
+
 setupView webView = do
   web <- ask
   let updateBar = runReaderT updateBars web
   liftIO $ GTK.on webView GTK.keyPressEvent    $ handleKey web    
   liftIO $ GTK.on webView GTK.buttonPressEvent $ handleMouse web      
   liftIO $ GTK.on webView Web.progressChanged (const updateBar)
+  liftIO . GTK.on webView Web.navigationPolicyDecisionRequested $ \_ _ x _ -> do
+    reason <- Web.webNavigationActionGetReason x
+    button <- Web.webNavigationActionGetButton x
+    print (reason, button)
+    return False
   liftIO $ GTK.on webView Web.hoveringOverLink (\title url -> 
     (writeIORef (hovering web) (title, url) 
     >> updateBar))
@@ -108,6 +116,15 @@ modifyTabs f = do
   liftIO $ modifyIORef (tabs web) f
   updateView
   
+maybeModifyTabs f = do 
+  web <- ask
+  liftIO $ do 
+    t <- liftIO . readIORef $ tabs web
+    case f t of 
+      Nothing -> putStrLn "modifyTabs failed"
+      Just x -> writeIORef (tabs web) x
+  updateView
+
 nextTab = lift $ modifyTabs PL.next
 prevTab = lift $ modifyTabs PL.previous
 
@@ -136,8 +153,7 @@ updateView = do
     child <- GTK.binGetChild cont
     maybe (return ()) (GTK.containerRemove cont) child
     GTK.containerAdd cont scrolledWindow
-    GTK.widgetShow scrolledWindow
-    GTK.widgetShow view
+    GTK.widgetShowAll scrolledWindow
     GTK.widgetGrabFocus view
   updateBars
   

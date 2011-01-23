@@ -3,6 +3,7 @@
 module Web.HBrowser.WebMonad where
 
 import qualified Graphics.UI.Gtk as GTK
+import Graphics.UI.Gtk (set, AttrOp((:=)), on)
 import qualified Graphics.UI.Gtk.WebKit.WebView as Web
 import Data.Map as M
 import Data.List.PointedList.Circular as PL 
@@ -22,7 +23,7 @@ type KeyDef = (ModifierFlags, GTK.KeyVal)
 type MapRef = IORef [Keymap]
 
 type MouseDef = (ModifierFlags, GTK.MouseButton)
-type Mousemap = [( MouseDef, (WebInputMonad ()))]
+type Mousemap = [(MouseDef, WebInputMonad ())]
 
 data Tab = Tab 
     { tabView    :: Web.WebView
@@ -47,6 +48,7 @@ data Web = Web
   , inputEntry     :: GTK.Entry
   , inputLabel     :: GTK.Label
   , inputBox       :: GTK.HBox
+  , infoLabel      :: GTK.Label
   , typeThroughRef :: IORef Bool
   }
 
@@ -80,3 +82,5 @@ top _        = error "top on empty stack"
 hoverURL = do 
   hoveringRef <- asks hovering
   liftIO . fmap fst $ readIORef hoveringRef
+  
+

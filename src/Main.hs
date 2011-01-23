@@ -23,7 +23,8 @@ import Data.Bits
 import Data.List
 import Data.Maybe
 
-import Data.List.PointedList.Circular as PL
+import qualified Data.List.PointedList.Circular as PL
+import Data.List.PointedList(moveTo)
 
 import Data.IORef
 
@@ -58,7 +59,7 @@ newTab url = do
   web <- ask
   tab <- createTab
   liftIO $ Web.webViewLoadUri (tabView tab) url
-  modifyTabs $ insertRight tab
+  modifyTabs $ PL.insertRight tab
   updateView
 
 keepKeymap :: (MonadState NextMap m) => m ()
@@ -97,7 +98,53 @@ setKeymap map =  ask >>= \(keymapRef -> ref) -> io $ writeIORef ref [map]
 modifyKeymap :: ([Keymap] -> [Keymap]) -> WebMonad ()
 modifyKeymap f =  ask >>= \(keymapRef -> ref) -> io $ 
                     readIORef ref >>= writeIORef ref . f
+
+activateInput :: (MonadWeb m) => String -> m ()
+activateInput prefill= do
+  bar <- asks inputEntry
+  container <- asks inputBox
+  liftIO $ do 
+    GTK.widgetShow container
+  -- grabbing focus seems to select the whole content of the entry
+  -- so we do it first and remove the selection afterwards
+    GTK.widgetGrabFocus bar
+    set bar [ GTK.entryText := prefill 
+            , GTK.editablePosition := (-1)
+            ]
+
+deactivateInput = do
+  widget <- asks inputBox
+  view <- currentView
+  actionRef <- asks inputAction
+  liftIO $ do
+    GTK.widgetHide widget
+    GTK.widgetGrabFocus view
+    writeIORef actionRef (const $ return ())
+
+withInput :: (MonadWeb m) =>String -> String -> (String -> WebMonad ()) -> m ()
+withInput labelText prefill action =  do
+  label <- asks inputLabel
+  actionRef <- asks inputAction
+  liftIO $ writeIORef actionRef action
+  liftIO $ GTK.labelSetText label labelText
+  activateInput prefill
+
+
+showInfoLabel text = do
+  label <- asks infoLabel
+  liftIO $ do 
+    GTK.labelSetText label text
+    GTK.widgetShow label
+
+hideInfoLabel = do
+  asks infoLabel >>= liftIO . GTK.widgetHide
   
+withInfoLabelInput info label prefill action = do
+  showInfoLabel info
+  withInput label prefill $ \x ->  action x >> hideInfoLabel
+  
+cleanup = deactivateInput >> hideInfoLabel
+
 myKeymap  :: ( GTK.EditableClass self, GTK.EntryClass self) => self -> Keymap
 myKeymap bar = M.fromList
            [ ((0, GTK.keyFromName "l"), submap loadKeymap)
@@ -114,7 +161,14 @@ myKeymap bar = M.fromList
            , ((0, GTK.keyFromName "q"), runScriptFromFile "follow-selected")
            , ((0, GTK.keyFromName "f"), runScriptFromFile "follow-numbers-new-tab")
            , ((0, GTK.keyFromName "r"), withCurrentViewIO Web.webViewReloadBypassCache)
-           , ((0, GTK.keyFromName "v"), typeThrough )      
+           , ((0, GTK.keyFromName "v"), typeThrough )
+           , ((0, GTK.keyFromName "n"), do   
+                 titles <- withTabs $ liftIO . titleList . toList
+                 withInfoLabelInput (unlines $ zipWith (++) (map show [1..]) titles) "go to tab" "" $ \n -> do
+                   let num = (read n) -1
+                   liftIO $ print num
+                   maybeModifyTabs (moveTo num ))
+           , ((0, GTK.keyFromName "Escape"), cleanup )
            ]
 
 loadKeymap :: Keymap
@@ -129,32 +183,9 @@ myMousemap :: Mousemap
 myMousemap = [ ((0, GTK.LeftButton), hoveringLink >>= maybe (return ()) openURL)
              , ((0, GTK.MiddleButton), hoveringLink >>= maybe (return ()) (lift . newTab))
              ]
-
-activateInput :: (MonadWeb m) => String -> m ()
-activateInput prefill= do
-  bar <- asks inputEntry
-  container <- asks inputBox
-  liftIO $ do 
-    GTK.widgetShow container
-  -- grabbing focus seems to select the whole content of the entry
-  -- so we do it first and remove the selection afterwards
-    GTK.widgetGrabFocus bar
-    set bar [ GTK.entryText := prefill 
-            , GTK.editablePosition := (-1)
-            ]
-
   
 histBack = lift . withCurrentView $ liftIO . Web.webViewGoBack
 histForward = lift . withCurrentView $ liftIO . Web.webViewGoForward
-
-deactivateInput = do
-  widget <- asks inputBox
-  view <- currentView
-  actionRef <- asks inputAction
-  liftIO $ do
-    GTK.widgetHide widget
-    GTK.widgetGrabFocus view
-    writeIORef actionRef (const $ return ())
 
 typeThrough :: WebInputMonad ()
 typeThrough = do 
@@ -168,7 +199,7 @@ handleEntryKey web bar = do
   keyName <- GTK.eventKeyName
   mods <- fromFlags <$> GTK.eventModifier
   case (mods, keyName) of
-    (0, "Escape") -> io $ runReaderT deactivateInput web
+    (0, "Escape") -> io $ runReaderT cleanup web
     _                         -> return ()
   return False
 
@@ -195,14 +226,6 @@ defaultRenderStatus = do
                     , hoveringURL
                     , fromMaybe "" title , " "
                     , uri]
-
-withInput :: (MonadWeb m) =>String -> String -> (String -> WebMonad ()) -> m ()
-withInput labelText prefill action =  do
-  label <- asks inputLabel
-  actionRef <- asks inputAction
-  liftIO $ writeIORef actionRef action
-  liftIO $ GTK.labelSetText label labelText
-  activateInput prefill
 
 openURL :: (MonadWeb m) => String -> m ()
 openURL url = do
@@ -243,13 +266,17 @@ main = do
   
   GTK.containerAdd eventBox (tabScrolledWindow initialTab)
   
+  infoLabel <- GTK.labelNew Nothing
+  GTK.set infoLabel [ GTK.miscXalign  GTK.:= 0 ]  
+   
   statusbar <- GTK.labelNew Nothing
   GTK.set statusbar [ GTK.miscXalign  GTK.:= 0 ]
-  
+
   GTK.containerAdd window box
   
   GTK.boxPackStart box tabLabel  GTK.PackNatural 0
   GTK.boxPackStart box eventBox  GTK.PackGrow    0
+  GTK.boxPackStart box infoLabel GTK.PackNatural 0
   GTK.boxPackStart box statusbar GTK.PackNatural 0
   GTK.boxPackStart box inputBox  GTK.PackNatural 0  
   
@@ -281,6 +308,7 @@ main = do
                     , inputEntry
                     , inputLabel
                     , inputBox
+                    , infoLabel
                     , typeThroughRef
                     }
   let runWebMonad action = runReaderT action web
@@ -297,6 +325,6 @@ main = do
   GTK.widgetShowAll window
 --   GTK.widgetHide inputEntry
   GTK.onDestroy window GTK.mainQuit
-  runWebMonad $ deactivateInput >> updateView
+  runWebMonad $ cleanup >> updateView
   GTK.mainGUI
   
